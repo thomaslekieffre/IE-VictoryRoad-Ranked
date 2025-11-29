@@ -61,33 +61,77 @@ Le dashboard sera disponible sur http://localhost:3000
   - `active` - Plus actifs (nombre de matchs)
   - `elo` - Meilleur ELO
 
+### Comparaisons
+- `/compare [joueur1] [joueur2]` - Comparer deux joueurs (stats et head-to-head)
+- `/records [joueur]` - Voir les records personnels (meilleur ELO, plus longue série)
+
 ### Aide
 - `/help` - Afficher toutes les commandes disponibles
 
 ## Structure
 
-- `src/index.js` - Point d'entrée du bot
-- `src/commands/` - Commandes du bot
-- `src/database/` - Gestion de la base de données SQLite
-- `src/dashboard/` - Dashboard web (serveur + interface)
-- `src/deploy-commands.js` - Script pour enregistrer les commandes
-- `data/ranked.db` - Base de données SQLite (créée automatiquement)
+```
+IE-Ranked/
+├── src/
+│   ├── index.js              # Point d'entrée du bot
+│   ├── commands/             # Toutes les commandes Discord
+│   ├── database/             # Gestion de la base de données SQLite
+│   ├── utils/                # Utilitaires (rôles, etc.)
+│   └── deploy-commands.js    # Script pour enregistrer les commandes
+├── dashboard/                # Application Next.js
+│   ├── app/                  # Pages et API routes
+│   ├── components/           # Composants React (shadcn/ui)
+│   └── lib/                  # Utilitaires (DB wrapper, etc.)
+├── data/
+│   └── ranked.db            # Base de données SQLite (créée automatiquement)
+└── package.json             # Dépendances du bot
+```
+
+## Fonctionnalités avancées
+
+### Matchmaking intelligent
+- Recherche automatique d'adversaires avec ELO similaire
+- Expansion progressive de la plage ELO si aucun adversaire trouvé
+- Confirmation requise pour les écarts d'ELO importants
+- Création automatique de salons privés pour les matchs
+- Rappels automatiques après 12 minutes
+
+### Système de confirmation
+- Tous les matchs nécessitent la confirmation des deux joueurs
+- Boutons interactifs pour accepter/refuser les résultats
+- Protection contre les erreurs et tricheries
+
+### Historique et records
+- Historique complet des changements d'ELO
+- Records personnels (meilleur ELO, plus longue série)
+- Notifications DM pour les nouveaux records (ELO >= 1500, série >= 5)
+
+### Dashboard en temps réel
+- Synchronisation automatique avec la base de données
+- Rafraîchissement toutes les 5 secondes
+- Interface moderne et responsive
 
 ## Dashboard Web
 
-Le dashboard web permet de visualiser les statistiques en temps réel :
-- Classement des joueurs
-- File d'attente du matchmaking
-- Matchs actifs
-- Top classements (win rate, streak, etc.)
-- Statistiques globales
+Le dashboard web (Next.js + shadcn/ui) permet de visualiser et gérer les statistiques en temps réel :
 
-Pour lancer le dashboard :
+### Fonctionnalités
+- **Page principale** : Classement des joueurs avec recherche et tri
+- **Profils joueurs** : Statistiques détaillées, historique des matchs, graphique de progression ELO
+- **Comparaison** : Comparer deux joueurs côte à côte avec leurs stats et head-to-head
+- **Matchs** : File d'attente du matchmaking et matchs actifs en temps réel
+- **Création de matchs** : Lancer des matchs directement depuis le site
+
+### Lancer le dashboard
 ```bash
-npm run dashboard
+cd dashboard
+npm install
+npm run dev
 ```
 
-Puis ouvrir http://localhost:3000 dans ton navigateur.
+Le dashboard sera disponible sur http://localhost:3000
+
+**Note** : Le dashboard partage la même base de données que le bot et se met à jour automatiquement.
 
 ## Système ELO
 

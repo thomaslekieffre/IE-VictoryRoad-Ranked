@@ -83,10 +83,20 @@ async function startMatchmakingSearch(client, userId) {
   const player = client.db.getPlayerInQueue(userId);
   if (!player) return;
 
+  // Initialiser le stockage des timers pour ce joueur
+  const timers = {
+    checkInterval: null,
+    expandTimer: null,
+    maxTimer: null
+  };
+
   // Timer pour élargir la recherche après 5 minutes
-  setTimeout(async () => {
+  timers.expandTimer = setTimeout(async () => {
     const stillInQueue = client.db.getPlayerInQueue(userId);
-    if (!stillInQueue) return;
+    if (!stillInQueue) {
+      client.matchmakingTimers.delete(userId);
+      return;
+    }
 
     client.db.expandEloRange(userId);
     
@@ -97,6 +107,7 @@ async function startMatchmakingSearch(client, userId) {
       if (opponentQueue && opponentQueue.elo_range_expanded === 1) {
         // Les deux ont élargi, créer directement
         await createMatch(client, userId, opponent.user_id);
+        client.matchmakingTimers.delete(userId);
       } else {
         // Demander confirmation
         await requestEloRangeConfirmation(client, userId, opponent.user_id);
@@ -105,10 +116,13 @@ async function startMatchmakingSearch(client, userId) {
   }, 5 * 60 * 1000); // 5 minutes
 
   // Vérifier périodiquement pour trouver un match
-  const checkInterval = setInterval(async () => {
+  timers.checkInterval = setInterval(async () => {
     const stillInQueue = client.db.getPlayerInQueue(userId);
     if (!stillInQueue) {
-      clearInterval(checkInterval);
+      clearInterval(timers.checkInterval);
+      if (timers.expandTimer) clearTimeout(timers.expandTimer);
+      if (timers.maxTimer) clearTimeout(timers.maxTimer);
+      client.matchmakingTimers.delete(userId);
       return;
     }
 
@@ -116,7 +130,10 @@ async function startMatchmakingSearch(client, userId) {
     const foundOpponent = client.db.findMatchForPlayer(userId, eloRange);
 
     if (foundOpponent) {
-      clearInterval(checkInterval);
+      clearInterval(timers.checkInterval);
+      if (timers.expandTimer) clearTimeout(timers.expandTimer);
+      if (timers.maxTimer) clearTimeout(timers.maxTimer);
+      client.matchmakingTimers.delete(userId);
       
       // Si écart élargi, demander confirmation
       if (eloRange === 200) {
@@ -136,8 +153,11 @@ async function startMatchmakingSearch(client, userId) {
   }, 10000); // Vérifier toutes les 10 secondes
 
   // Nettoyer après 30 minutes max
-  setTimeout(() => {
-    clearInterval(checkInterval);
+  timers.maxTimer = setTimeout(() => {
+    if (timers.checkInterval) clearInterval(timers.checkInterval);
+    if (timers.expandTimer) clearTimeout(timers.expandTimer);
+    client.matchmakingTimers.delete(userId);
+    
     const stillInQueue = client.db.getPlayerInQueue(userId);
     if (stillInQueue) {
       client.db.removeFromMatchmakingQueue(userId);
@@ -148,6 +168,9 @@ async function startMatchmakingSearch(client, userId) {
       }
     }
   }, 30 * 60 * 1000);
+
+  // Stocker les timers
+  client.matchmakingTimers.set(userId, timers);
 }
 
 // Demander confirmation pour écart d'ELO

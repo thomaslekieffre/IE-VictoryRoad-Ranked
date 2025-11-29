@@ -1,0 +1,7 @@
+# Normaliser les fins de ligne
+* text=auto eol=lf
+
+# Fichiers binaires
+*.db binary
+*.wasm binary
+

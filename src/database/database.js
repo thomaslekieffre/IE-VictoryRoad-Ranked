@@ -114,6 +114,32 @@ export default class DatabaseManager {
         reminder_sent INTEGER DEFAULT 0
       )
     `);
+
+    // Table d'historique ELO pour tracker les changements
+    this.db.run(`
+      CREATE TABLE IF NOT EXISTS elo_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT NOT NULL,
+        elo INTEGER NOT NULL,
+        match_id INTEGER,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES players(user_id),
+        FOREIGN KEY (match_id) REFERENCES matches(match_id)
+      )
+    `);
+
+    // Table des records/milestones
+    this.db.run(`
+      CREATE TABLE IF NOT EXISTS records (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT NOT NULL,
+        record_type TEXT NOT NULL,
+        record_value INTEGER NOT NULL,
+        match_id INTEGER,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES players(user_id)
+      )
+    `);
   }
 
   // Méthodes pour les joueurs
@@ -315,13 +341,33 @@ export default class DatabaseManager {
 
   // Méthodes pour le matchmaking
   addToMatchmakingQueue(userId, username, elo, dmMessageId) {
-    const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO matchmaking_queue (user_id, username, elo, dm_message_id, search_started_at, elo_range_expanded)
-      VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, 0)
-    `);
-    stmt.bind([userId, username, elo, dmMessageId]);
-    stmt.step();
-    stmt.free();
+    // Générer un timestamp ISO 8601 en UTC pour éviter les problèmes de décalage horaire
+    const now = new Date().toISOString();
+    
+    // Vérifier si le joueur est déjà dans la queue
+    const existing = this.getPlayerInQueue(userId);
+    
+    if (existing) {
+      // Mettre à jour avec un nouveau timestamp
+      const stmt = this.db.prepare(`
+        UPDATE matchmaking_queue 
+        SET username = ?, elo = ?, dm_message_id = ?, search_started_at = ?, elo_range_expanded = 0
+        WHERE user_id = ?
+      `);
+      stmt.bind([username, elo, dmMessageId, now, userId]);
+      stmt.step();
+      stmt.free();
+    } else {
+      // Nouvelle insertion
+      const stmt = this.db.prepare(`
+        INSERT INTO matchmaking_queue (user_id, username, elo, dm_message_id, search_started_at, elo_range_expanded)
+        VALUES (?, ?, ?, ?, ?, 0)
+      `);
+      stmt.bind([userId, username, elo, dmMessageId, now]);
+      stmt.step();
+      stmt.free();
+    }
+    
     this.save();
     return { changes: this.db.getRowsModified() };
   }
@@ -491,6 +537,107 @@ export default class DatabaseManager {
     }
     
     return count > 0 ? Math.round(totalScore / count * 10) / 10 : 0;
+  }
+
+  // Méthodes pour l'historique ELO
+  getEloHistory(userId, limit = 50) {
+    const stmt = this.db.prepare(`
+      SELECT * FROM elo_history 
+      WHERE user_id = ? 
+      ORDER BY created_at DESC 
+      LIMIT ?
+    `);
+    stmt.bind([userId, limit]);
+    const results = [];
+    while (stmt.step()) {
+      results.push(this.rowToObject(stmt.getAsObject()));
+    }
+    stmt.free();
+    return results;
+  }
+
+  // Méthodes pour les records
+  checkAndSaveRecord(userId, recordType, recordValue, matchId = null) {
+    // Vérifier si c'est un nouveau record
+    const stmt = this.db.prepare(`
+      SELECT MAX(record_value) as max_value 
+      FROM records 
+      WHERE user_id = ? AND record_type = ?
+    `);
+    stmt.bind([userId, recordType]);
+    const result = stmt.step() ? this.rowToObject(stmt.getAsObject()) : null;
+    stmt.free();
+    
+    const currentMax = result?.max_value || 0;
+    
+    if (recordValue > currentMax) {
+      // Nouveau record !
+      const insertStmt = this.db.prepare(`
+        INSERT INTO records (user_id, record_type, record_value, match_id)
+        VALUES (?, ?, ?, ?)
+      `);
+      insertStmt.bind([userId, recordType, recordValue, matchId]);
+      insertStmt.step();
+      insertStmt.free();
+      this.save();
+      return { isNewRecord: true, previousRecord: currentMax, newRecord: recordValue };
+    }
+    
+    return { isNewRecord: false, currentRecord: currentMax };
+  }
+
+  getPlayerRecords(userId) {
+    const stmt = this.db.prepare(`
+      SELECT record_type, MAX(record_value) as record_value, created_at
+      FROM records
+      WHERE user_id = ?
+      GROUP BY record_type
+    `);
+    stmt.bind([userId]);
+    const results = [];
+    while (stmt.step()) {
+      results.push(this.rowToObject(stmt.getAsObject()));
+    }
+    stmt.free();
+    return results;
+  }
+
+  // Comparer deux joueurs
+  comparePlayers(userId1, userId2) {
+    const player1 = this.getPlayer(userId1);
+    const player2 = this.getPlayer(userId2);
+    
+    if (!player1 || !player2) return null;
+    
+    // Matchs entre les deux joueurs (seulement complétés avec scores valides)
+    const allMatches = this.getPlayerMatches(userId1, 100);
+    const matches = allMatches.filter(m => 
+      m.status === 'completed' &&
+      m.player1_score !== null &&
+      m.player2_score !== null &&
+      ((m.player1_id === userId1 && m.player2_id === userId2) ||
+       (m.player1_id === userId2 && m.player2_id === userId1))
+    );
+    
+    let wins1 = 0, wins2 = 0, draws = 0;
+    for (const match of matches) {
+      // Vérifier que winner_id existe et n'est pas vide
+      if (match.winner_id && match.winner_id === userId1) {
+        wins1++;
+      } else if (match.winner_id && match.winner_id === userId2) {
+        wins2++;
+      } else {
+        // Si winner_id est null/vide, c'est un nul
+        draws++;
+      }
+    }
+    
+    return {
+      player1: { ...player1, wins: wins1, losses: wins2, draws },
+      player2: { ...player2, wins: wins2, losses: wins1, draws },
+      totalMatches: matches.length,
+      headToHead: { wins1, wins2, draws }
+    };
   }
 
   // Helper pour convertir les résultats en objets

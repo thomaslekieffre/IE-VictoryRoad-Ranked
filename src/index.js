@@ -19,6 +19,8 @@ const client = new Client({
 });
 
 client.commands = new Collection();
+// Stocker les timers/intervalles de matchmaking par userId
+client.matchmakingTimers = new Map();
 
 // Charger les commandes
 const commandsPath = join(__dirname, 'commands');
@@ -72,7 +74,17 @@ client.on('interactionCreate', async interaction => {
         });
       }
 
+      // Retirer de la queue
       client.db.removeFromMatchmakingQueue(userId);
+      
+      // Nettoyer les timers/intervalles
+      const timers = client.matchmakingTimers.get(userId);
+      if (timers) {
+        if (timers.checkInterval) clearInterval(timers.checkInterval);
+        if (timers.expandTimer) clearTimeout(timers.expandTimer);
+        if (timers.maxTimer) clearTimeout(timers.maxTimer);
+        client.matchmakingTimers.delete(userId);
+      }
       
       const embed = EmbedBuilder.from(interaction.message.embeds[0]);
       embed.data.title = '❌ Recherche annulée';
@@ -366,9 +378,49 @@ async function finalizeMatch(interaction, client, confirmation) {
   const match = client.db.createMatch(confirmation.player1_id, confirmation.player2_id);
   client.db.updateMatch(match.lastInsertRowid, winnerId, confirmation.player1_score, confirmation.player2_score);
 
-  // Mettre à jour les ELO
-  client.db.updatePlayerElo(confirmation.player1_id, newElo1);
-  client.db.updatePlayerElo(confirmation.player2_id, newElo2);
+  // Mettre à jour les ELO avec historique
+  const eloUpdate1 = client.db.updatePlayerElo(confirmation.player1_id, newElo1, match.lastInsertRowid);
+  const eloUpdate2 = client.db.updatePlayerElo(confirmation.player2_id, newElo2, match.lastInsertRowid);
+  
+  // Vérifier les records
+  const records1 = client.db.checkAndSaveRecord(confirmation.player1_id, 'elo', newElo1, match.lastInsertRowid);
+  const records2 = client.db.checkAndSaveRecord(confirmation.player2_id, 'elo', newElo2, match.lastInsertRowid);
+  
+  // Vérifier les win streaks
+  const winStreak1 = client.db.getPlayerWinStreak(confirmation.player1_id);
+  const winStreak2 = client.db.getPlayerWinStreak(confirmation.player2_id);
+  
+  if (winner === 1) {
+    const streakRecord1 = client.db.checkAndSaveRecord(confirmation.player1_id, 'win_streak', winStreak1, match.lastInsertRowid);
+    if (streakRecord1.isNewRecord && winStreak1 >= 5) {
+      try {
+        const user = await client.users.fetch(confirmation.player1_id);
+        await user.send(`🎉 **Nouveau record de série de victoires !**\nTu as maintenant ${winStreak1} victoires consécutives !`);
+      } catch (e) {}
+    }
+  } else if (winner === 2) {
+    const streakRecord2 = client.db.checkAndSaveRecord(confirmation.player2_id, 'win_streak', winStreak2, match.lastInsertRowid);
+    if (streakRecord2.isNewRecord && winStreak2 >= 5) {
+      try {
+        const user = await client.users.fetch(confirmation.player2_id);
+        await user.send(`🎉 **Nouveau record de série de victoires !**\nTu as maintenant ${winStreak2} victoires consécutives !`);
+      } catch (e) {}
+    }
+  }
+  
+  // Notifier les nouveaux records d'ELO
+  if (records1.isNewRecord && newElo1 >= 1500) {
+    try {
+      const user = await client.users.fetch(confirmation.player1_id);
+      await user.send(`🏆 **Nouveau record d'ELO !**\nTon ELO est maintenant de ${newElo1} (précédent record: ${records1.previousRecord})`);
+    } catch (e) {}
+  }
+  if (records2.isNewRecord && newElo2 >= 1500) {
+    try {
+      const user = await client.users.fetch(confirmation.player2_id);
+      await user.send(`🏆 **Nouveau record d'ELO !**\nTon ELO est maintenant de ${newElo2} (précédent record: ${records2.previousRecord})`);
+    } catch (e) {}
+  }
 
   // Mettre à jour les rôles automatiquement
   const { updatePlayerRole } = await import('./utils/roles.js');

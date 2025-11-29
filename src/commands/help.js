@@ -48,6 +48,13 @@ export default {
           inline: false
         },
         {
+          name: '📊 Comparaisons',
+          value:
+            '`/compare [joueur1] [joueur2]` - Comparer deux joueurs\n' +
+            '`/records [joueur]` - Voir les records personnels',
+          inline: false
+        },
+        {
           name: 'ℹ️ Aide',
           value:
             '`/help` - Afficher ce message',

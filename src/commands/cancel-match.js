@@ -11,7 +11,18 @@ export default {
     // Vérifier si en file d'attente
     const inQueue = client.db.getPlayerInQueue(userId);
     if (inQueue) {
+      // Retirer de la queue
       client.db.removeFromMatchmakingQueue(userId);
+      
+      // Nettoyer les timers/intervalles
+      const timers = client.matchmakingTimers?.get(userId);
+      if (timers) {
+        if (timers.checkInterval) clearInterval(timers.checkInterval);
+        if (timers.expandTimer) clearTimeout(timers.expandTimer);
+        if (timers.maxTimer) clearTimeout(timers.maxTimer);
+        client.matchmakingTimers.delete(userId);
+      }
+      
       return interaction.reply({
         content: '✅ Tu as été retiré de la file d\'attente.',
         ephemeral: true,
