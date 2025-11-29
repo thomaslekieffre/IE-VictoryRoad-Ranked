@@ -1,0 +1,23 @@
+{
+  "name": "ie-ranked-bot",
+  "version": "1.0.0",
+  "description": "Bot Discord pour le système de ranked Inazuma Eleven Victory Road",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "deploy": "node src/deploy-commands.js",
+    "dashboard": "node src/dashboard/server.js"
+  },
+  "keywords": ["discord", "bot", "inazuma-eleven", "ranked"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "discord.js": "^14.14.1",
+    "sql.js": "^1.10.3",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2"
+  }
+}
+
