@@ -148,6 +148,3 @@ Le bot attribue automatiquement des rôles selon l'ELO :
 - **Gold** : 1400-1599 ELO
 - **Platinum** : 1600-1799 ELO
 - **Diamond** : 1800+ ELO
-
-**Important** : Tu dois créer ces rôles dans ton serveur Discord avec les noms exacts ci-dessus. Le bot les attribuera automatiquement lors des changements d'ELO.
-
